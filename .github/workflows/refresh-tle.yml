@@ -1,0 +1,69 @@
+name: Refresh TLE snapshots
+
+# Fetches CelesTrak feeds once an hour from GitHub's runners (not from visitors
+# or the edge), so the public site never triggers CelesTrak's per-IP rate limit.
+# Snapshots are committed to /snapshots and served by the proxy.
+
+on:
+  schedule:
+    - cron: "17 * * * *" # hourly at :17
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-tle
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch CelesTrak groups
+        run: |
+          mkdir -p snapshots
+          GROUPS="active stations starlink oneweb gps-ops galileo science weather geo cubesat"
+          UA="satellite-globe-hackathon/1.0 (+https://github.com/PeanutButte7/satellite-globe-proxy)"
+          for g in $GROUPS; do
+            echo "Fetching $g…"
+            if curl -fsS -A "$UA" \
+                 "https://celestrak.org/NORAD/elements/gp.php?GROUP=$g&FORMAT=tle" \
+                 -o "snapshots/$g.tle.new"; then
+              # Only replace if the payload looks like real TLE data (guards against
+              # caching an error page / empty body).
+              size=$(wc -c < "snapshots/$g.tle.new")
+              if [ "$size" -gt 500 ] && head -2 "snapshots/$g.tle.new" | grep -q '^1 '; then
+                mv "snapshots/$g.tle.new" "snapshots/$g.tle"
+                echo "  ok ($(($(wc -l < "snapshots/$g.tle")/3)) sats)"
+              else
+                echo "  suspicious payload ($size bytes) — keeping existing"
+                rm -f "snapshots/$g.tle.new"
+              fi
+            else
+              echo "  fetch failed — keeping existing"
+              rm -f "snapshots/$g.tle.new"
+            fi
+            sleep 8
+          done
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add snapshots
+          if git diff --staged --quiet; then
+            echo "No changes."
+          else
+            git commit -m "chore: refresh TLE snapshots [skip ci]"
+            git push
+          fi
+
+      - name: Purge jsDelivr cache
+        if: always()
+        run: |
+          for g in active stations starlink oneweb gps-ops galileo science weather geo cubesat; do
+            curl -fsS "https://purge.jsdelivr.net/gh/PeanutButte7/satellite-globe-proxy@main/snapshots/$g.tle" >/dev/null || true
+          done

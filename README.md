@@ -1,12 +1,17 @@
 # satellite-globe-proxy
 
-A tiny cached proxy so a public site can show live satellite positions without
-hammering [CelesTrak](https://celestrak.org). CelesTrak rate-limits (HTTP 403)
-when its large feeds are fetched directly from many browsers; this proxy fetches
-it **once per ~30 min per edge region** server-side, caches one shared copy on
-Vercel's edge network, and serves every visitor with permissive CORS.
+A resilient proxy so a public site can show live satellite positions without
+ever tripping [CelesTrak](https://celestrak.org)'s per-IP rate limit (HTTP 403
+on the large feeds).
 
-Built for a satellite-tracking globe (interactive 3D globe rendering ~10k live
+**How it stays reliable:** a GitHub Action (`.github/workflows/refresh-tle.yml`)
+fetches CelesTrak **once an hour from GitHub's runners** and commits the feeds to
+`/snapshots`. The edge function serves those committed snapshots (CDN-cached,
+permissive CORS), so visitors never trigger a live CelesTrak request. It only
+falls back to a live CelesTrak fetch if a snapshot doesn't exist yet. TLE data is
+valid for days, so hourly snapshots are plenty fresh.
+
+Built for a satellite-tracking globe (interactive 3D globe rendering ~15k live
 satellites), but it's a generic CelesTrak GP-feed proxy.
 
 ## Endpoint
