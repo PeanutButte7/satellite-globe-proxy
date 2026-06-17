@@ -1,0 +1,7 @@
+{
+  "name": "satellite-globe-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cached CelesTrak TLE proxy (Vercel Edge Function) for the satellite globe.",
+  "license": "MIT"
+}
