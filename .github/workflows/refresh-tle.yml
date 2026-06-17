@@ -25,25 +25,19 @@ jobs:
       - name: Fetch CelesTrak groups
         run: |
           mkdir -p snapshots
-          GROUPS="active stations starlink oneweb gps-ops galileo science weather geo cubesat"
           UA="satellite-globe-hackathon/1.0 (+https://github.com/PeanutButte7/satellite-globe-proxy)"
-          for g in $GROUPS; do
-            echo "Fetching $g…"
-            if curl -fsS -A "$UA" \
-                 "https://celestrak.org/NORAD/elements/gp.php?GROUP=$g&FORMAT=tle" \
-                 -o "snapshots/$g.tle.new"; then
-              # Only replace if the payload looks like real TLE data (guards against
-              # caching an error page / empty body).
-              size=$(wc -c < "snapshots/$g.tle.new")
-              if [ "$size" -gt 500 ] && head -2 "snapshots/$g.tle.new" | grep -q '^1 '; then
-                mv "snapshots/$g.tle.new" "snapshots/$g.tle"
-                echo "  ok ($(($(wc -l < "snapshots/$g.tle")/3)) sats)"
-              else
-                echo "  suspicious payload ($size bytes) — keeping existing"
-                rm -f "snapshots/$g.tle.new"
-              fi
+          for g in active stations starlink oneweb gps-ops galileo science weather geo cubesat; do
+            echo "Fetching $g"
+            code=$(curl -sS -A "$UA" -w '%{http_code}' \
+              "https://celestrak.org/NORAD/elements/gp.php?GROUP=$g&FORMAT=tle" \
+              -o "snapshots/$g.tle.new" || echo "000")
+            size=$(wc -c < "snapshots/$g.tle.new" 2>/dev/null || echo 0)
+            # Only replace if real TLE data (guards against 403 pages / "no data" replies).
+            if [ "$code" = "200" ] && [ "$size" -gt 1000 ] && grep -q '^1 ' "snapshots/$g.tle.new"; then
+              mv "snapshots/$g.tle.new" "snapshots/$g.tle"
+              echo "  ok: $size bytes"
             else
-              echo "  fetch failed — keeping existing"
+              echo "  skip: code=$code size=$size"
               rm -f "snapshots/$g.tle.new"
             fi
             sleep 8
